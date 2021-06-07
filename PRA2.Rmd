@@ -1,0 +1,330 @@
+---
+title: "Práctica 2: Limpieza y análisis de datos"
+author: "Carlos Tejedor González"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`'
+output:
+  pdf_document:
+    toc: yes
+    
+  html_document:
+    toc: yes
+---
+
+# 1. Descripción del dataset. ¿Por qué es importante y qué pregunta/problema pretende responder?
+
+El dataset elegido se trata del llamado Red Wine Quality, disponible en Kaggle https://www.kaggle.com/uciml/red-wine-quality-cortez-et-al-2009 y también en su fuente original, el repositorio UCI: https://archive.ics.uci.edu/ml/datasets/wine+quality
+
+Las variables que nos ofrece este dataset son:
+
+1. __fixed acidity__
+
+2. __volatile acidity__
+
+3. __citric acid__
+
+4. __residual sugar__
+
+5. __chlorides__
+
+6. __free sulfur dioxide__
+
+7. __total sulfur dioxide__
+
+8. __density__
+
+9. __pH__
+
+10. __sulphates__
+
+11. __alcohol__
+
+12. __quality__
+
+Las variables de la 1 a la 11 se tratan de indicadores que se obtienen de las diferentes muestras de vino mediante análisis fisicoquímicos.
+
+La variable 12, quality, nos indica en una escala del 1 al 10 la calidad percibida del vino.
+
+Existe, en otro dataset, un conjunto idéntico del mismo autor pero sobre vino blanco denominado "White Wine Quality" que también vamos a utilizar: https://www.kaggle.com/piyushagni5/white-wine-quality
+
+La problemática que aquí nos encontramos es ¿Qué características del vino influyen en su calidad y en qué medida? y también si los vinos blancos tienen mayor calidad que los tintos.
+
+Todo esto lo vamos a tratar de responder con un análisis estadístico realizado tras un limpieza de los datos de que disponemos.
+
+# 2. Integración y selección de los datos de interés a analizar.
+
+En primer lugar vamos a cargar el dataset y comprobamos que la lectura es correcta:
+```{r}
+red_wine<-read.csv("winequality-red.csv", sep=",")
+str(red_wine)
+
+```
+Añadimos una nueva variable para indicar que se trata de vino tinto.
+```{r}
+red_wine$type <- "Red"
+```
+Procedemos a la lectura del dataset sobre vino blanco.
+```{r}
+white_wine<-read.csv("winequality-white.csv", sep=";")
+str(white_wine)
+```
+Las variables son idénticas a las del vino tinto, por lo que solamente añadimos la variable para indicar que se trata de vino blanco.
+```{r}
+white_wine$type <- "White"
+```
+
+Hacemos una integración vertical de los de los dos dataset con los dos tipos de vinos:
+```{r}
+wine<-rbind(red_wine,white_wine)
+```
+
+Por otra parte, tal y como viene representada la información, no procedería hacer selección alguna. Es cierto que en el análisis posterior se pueden descubrir variables que no sean interesantes porque no influyan en la calidad del vino (quality), que es la variable a predecir, pero en este momento tenemos que utilizar todas ellas con la información más completa posible para encontrar las posibles relaciones que existan pues hacerlo ahora resultaría prematuro.
+
+# 3. Limpieza de los datos.
+
+## 3.1. ¿Los datos contienen ceros o elementos vacíos? ¿Cómo gestionarías cada uno de estos casos?
+Comprobamos la existencia de valores nulos.
+```{r}
+colSums(is.na(wine))
+```
+Hacemos lo mismo con valores vacíos.
+```{r}
+colSums(wine=="")
+```
+Existencia de valores 0.
+```{r}
+colSums(wine==0)
+```
+No existen valores vacíos o "NA", pero hemos encontrado algunos valores 0 en la variable "citric.acid" que no tienen por qué ser un error o valor perdido, puesto que es una variable númerica. De todos modos vamos a ver como se distribuye la misma por si nos diera alguna pista al respecto:
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+wine%>%ggplot(aes(citric.acid))+geom_histogram(fill="blue")+ggtitle("Distribución de citric.acid")
+```
+Por la distribución de la variable, se puede concluir que los valores 0 son un valor correcto y, por lo tanto, no hay que hacer limpieza alguna.
+
+Nos hemos encontrado con un dataset realmente limpio, algo tan positivo como inusual.
+
+## 3.2. Identificación y tratamiento de valores extremos.
+
+Para la identificación de los valores extremos, vamos a representar un boxplot de cada variable numérica. Previamente con sclae() ponemos todas las variables en la misma escala, ya que evidentemente cada una de ellas es diferente.
+
+```{r}
+boxplot(scale(wine[0:12]))
+```
+
+De los boxplot podemos ver que las variables  citric.acid, residual.sugar,chlorides, free.sulfur.dioxide y density presentan claros valores extremos.
+
+Al ser valores muy puntuales y muy extremos, no parece que puedan considerarse válidos en modo alguno y, por lo tanto, hay que identificarlos y suprimirlos.
+
+Vamos a lozalizar los valores extremos de cada variable apra suprimirlo:
+```{r}
+boxplot(wine$citric.acid)
+```
+```{r}
+wine[which(wine$citric.acid > 1.2),]
+```
+Las lineas 2345 y 4572 contienen outlier
+```{r}
+boxplot(wine$residual.sugar)
+```
+```{r}
+wine[which(wine$residual.sugar > 40),]
+```
+La linea 4381 contiene outlier
+```{r}
+boxplot(wine$free.sulfur.dioxide)
+```
+```{r}
+wine[which(wine$free.sulfur.dioxide > 200),]
+```
+6345 contiene outlier
+```{r}
+boxplot(wine$density)
+```
+
+```{r}
+wine[which(wine$density > 1.02),]
+```
+La 4381 contiene outlier
+
+
+
+
+Eliminamos los valores detectados como outlier
+```{r}
+wine <- wine[-c(2345,4381, 4572, 6345 ),]
+```
+
+Exportamos el nuevo fichero una vez hechas las tareas de limpieza:
+
+```{r}
+write.csv(wine, "Wine_clean.csv")
+```
+
+# 4. Análisis de los datos.
+
+## 4.1. Selección de los grupos de datos que se quieren analizar/comparar (planificación de los análisis a aplicar).
+
+Hacemos una agrupación por tipo de vino (color)
+```{r}
+
+wine.red <- wine[wine$type == "Red",]
+wine.white <- wine[wine$type == "White",]
+```
+
+Realizamos una agrupación por calidad del vino, una nueva variable dicotómica que indique : 1 Buena calidad (quality>=7) y el resto 0 No buena calidad.
+```{r}
+good_wine <-ifelse(test=wine$quality>=7,yes=1,no=0)
+wine$good_wine=good_wine
+quality<- as.factor(wine$quality)
+```
+
+
+## 4.2. Comprobación de la normalidad y homogeneidad de la varianza.
+Primero vemos el tamaño de la muestra que estamos manejando.
+```{r}
+nrow(wine)
+```
+En primer lugar, por el Teorema Central del Límite, dado que tenemos una muestra con de un tamaño muy grande (n=6493), podemos asumir normalidad. No obstante vamos a aplicar también algún test de los diponibles en R, concretamente el test de Anderson-Darling disponible en el paquete "nortest".
+
+```{r}
+library(nortest)
+ad.test(wine[,1])
+ad.test(wine[,2])
+ad.test(wine[,3])
+ad.test(wine[,4])
+ad.test(wine[,5])
+ad.test(wine[,6])
+ad.test(wine[,7])
+ad.test(wine[,8])
+ad.test(wine[,9])
+ad.test(wine[,10])
+ad.test(wine[,11])
+ad.test(wine[,12])
+```
+Como vemos, en todas las variables el p-valor < 2.2e-16, por lo que no existe evidencia estadística para rechazar Ho y asumimos normalidad.
+
+Pasando a la comprobación de la homocedasticidad (es decir, homogeneidad de la varianza.) realizando un test de Levene, dado que los datos se distribuyen normalmente, se comprueba la homogeneidad de la varianza de la variable calidad entre vinos tintos y blancos:
+```{r}
+library(car)
+leveneTest(quality ~ as.factor(type), data = wine)
+```
+El test no encuentra diferencias significativas entre las varianzas de los dos grupos y se concluye que la variable quality presenta varianzas estadísticamente homogéneas para vinos blancos y tintos.
+
+
+## 4.3. Aplicación de pruebas estadísticas para comparar los grupos de datos. En función de los datos y el objetivo del estudio, aplicar pruebas de contraste de hipótesis, correlaciones, regresiones, etc. Aplicar al menos tres métodos de análisis diferentes.
+
+### 4.3.1. ¿Qué variables  influyen más en la calidad?
+
+Mediante un análisis de correlación, vamos a estudiar todas las variables para ver en qué grado influyen en la calidad del vino:
+```{r}
+corr_matrix <- matrix(nc = 2, nr = 0)
+colnames(corr_matrix) <- c("estimate", "p-value")
+# Calcular el coeficiente de correlación para cada variable con respecto a "quality"
+for (i in 1:(ncol(wine) - 2)) {
+if (is.integer(wine[,i]) | is.numeric(wine[,i]))
+    { 
+    spearman_test = cor.test(wine[,i],wine[,length(wine)-2],method = "spearman")
+      corr_coef = spearman_test$estimate
+      p_val = spearman_test$p.value
+      # Añadimos resultado a la matriz
+    pair = matrix(ncol = 2, nrow = 1)
+    pair[1][1] = corr_coef
+    pair[2][1] = p_val
+    corr_matrix <- rbind(corr_matrix, pair)
+    rownames(corr_matrix)[nrow(corr_matrix)] <- colnames(wine)[i]
+  } 
+}
+a <- corr_matrix[,'p-value']
+corr_matrix[order(a),]
+```
+La variable más correlacionada sería alcohol, por ser la próxima a 1 o -1. No obstante, los valores no son especialmente buenos por lo que no se podrían sacar conclusiones en base a esta parte del estudio.
+
+### 4.3.2. ¿La calidad del vino blanco es superior a la del tinto?
+
+Para responder a esta pregunta, quizá sea interesante ver como se distribuyen gráficamente en ambas variedades la calidad:
+```{r}
+boxplot( wine.red$quality, wine.white$quality, names=c("Red","White"), main="Quality" )
+```
+Gráficamente no parece haber diferencia alguna pero vamos a comprobarlo con un método estadístico.
+
+A través de un contraste de hipótesis vamos a determinar si la calidad del vino es superior dependiendo del tipo de vino del que se trate (tinto o blanco) con una confianza del 95%.
+
+Hipótesis nula: la calidad de los vinos blancos es igual a la de los tintos.
+
+Hipótesis alternativa: la calidad de los vinos blancos es superior a la de los tintos.
+
+H0 : $\mu$~white~ = $\mu$~red~
+
+H1 : $\mu$~white~ > $\mu$~red~
+
+Realizamos un test de homoscedasticidad antes de aplicar el t.test:
+```{r}
+var.test( wine.white$quality, wine.red$quality )
+```
+Interpretación del test de homoscedasticidad: El resultado nos da un p-valor muy pequeño. Por tanto, debemos rechazar la hipótesis nula de igualdad de varianzas. Debemos considerar que las varianzas son distintas.
+
+Aplicamos el test:
+```{r}
+t.test(wine.white$quality, wine.red$quality, alternative = "greater")
+```
+El p-valor obtenido (p-value < 2.2e-16)  significa que podemos rechazar la hipótesis nula a favor de la hipótesis alternativa. Podemos concluir con un 95 % de nivel de confianza que los vinos blancos son significativamente mejores que los vinos tintos, en relación con su calidad.
+
+### 4.3.3. Modelo de regresión lineal
+
+```{r}
+library(rsample)
+split.1 <- initial_split(wine, prop = 0.8, strata = "quality")
+train.1 <- training(split.1)
+test.1 <- testing(split.1)
+```
+
+
+```{r}
+mod.1 <- lm(quality~., train.1)
+summary(mod.1)
+```
+Las variables con Pr(>|t|) > 0.05 significa que no tienen significación en el modelo,por lo que nos fijamos en las que están señaladas con ***, que es una forma visual de ver el nivel de singificación. El valor de R-squared los indica qué porcentaje de varianza explica el modelo cerda de un 30%, que no es un resultado muy bueno.
+
+
+Se puede concluir que no existe una relación lineal sólida entre las variables estudiadas y la calidad del vino, pues alrededor de un 70% de la varianza no está explicada por el modelo.
+
+### 4.3.4. Modelo de regresión logística
+
+Utilizando la variable dicotómica "good_wine" anteriormente creada y viendo las variables ue hasta ahora hemos encotnrado como significativas, vamos a construir un modlo e regresión logística 
+```{r}
+GLM.1 <- glm( wine$good_wine ~ alcohol + volatile.acidity + sulphates + citric.acid + fixed.acidity + chlorides + total.sulfur.dioxide + density, family=binomial(logit),data=wine)
+summary(GLM.1)
+
+```
+```{r}
+wine$prob_qualityM=predict(GLM.1, wine, type="response")
+newdatarisk=subset(wine, prob_qualityM>0.7)
+Q3 <-quantile(wine$alcohol)[4]
+alcohol <- which(newdatarisk$alcohol>Q3)
+```
+Calculamos el área bajo la curva ROC para comprobar la calidad del modelo:
+```{r}
+library(pROC)
+g=roc(wine$good_wine,wine$prob_qualityM, data=wine)
+auc(g)
+```
+El área bajo la curva ROV es de 0,804. Cuanto mas se acerque a 1, mejor es el modelo, por lo que este model esbastante bueno.
+
+# 5. Representación de los resultados a partir de tablas y gráficas.
+
+Representamos gráficamente las correlaciones entre variables al hilo de lo estudiado en el primer punto:
+```{r}
+library(corrplot)
+corrplot(cor(wine[1:12]))
+```
+Representamos gráficamente la curva ROC del modelo de regresión logística:
+```{r}
+plot(g)
+auc(g)
+```
+# 6. Resolución del problema. A partir de los resultados obtenidos, ¿cuáles son las conclusiones? ¿Los resultados permiten responder al problema?
+
+Por una parte, hemos llegado a la conclusión, mediante un contraste de hipótesis, de que la calidad de los vinos blancos es superior a la de los tintos. También hemos llegado a la conclusión de que el alcohol es determinante en la calidad del vino mediante su correlación y, posteriormente a través del modelo de regresión logística hemos también encontrado que determina si un vino es de buna calidad o no, junto a otras variables que han resultado explicativas de dicha cualidad.
